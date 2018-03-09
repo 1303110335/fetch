@@ -51,6 +51,7 @@ func (rcache *reqCacheBySlice) put(req *base.Request) bool {
 	rcache.mutex.Lock()
 	defer rcache.mutex.Unlock()
 	rcache.cache = append(rcache.cache, req)
+	fmt.Println(rcache.cache)
 	return true
 }
 

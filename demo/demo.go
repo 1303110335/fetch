@@ -1,64 +1,22 @@
 package main
 
 import (
-	"sys/fetch/base"
-	"net/http"
-	"sys/fetch/logging"
 	"errors"
 	"fmt"
-	"net/url"
-	"io"
 	"github.com/Puerkitobio/goquery"
+	"io"
+	"sys/fetch/logging"
+	"net/http"
+	"net/url"
 	"strings"
-	"sys/fetch/analyzer"
 	"time"
+	"sys/fetch/analyzer"
+	"sys/fetch/base"
 	pipeline "sys/fetch/itempipeline"
 	sched "sys/fetch/scheduler"
 )
 
 var logger logging.Logger = logging.NewSimpleLogger()
-
-func main() {
-	//创建调度器
-	scheduler := sched.NewScheduler()
-
-	//准备启动参数
-	channelArgs := base.NewChannelArgs(10, 10, 10, 10)
-	poolBaseArgs := base.NewPoolBaseArgs(3, 3)
-	crawlDepth := uint32(1)
-	httpClientGenerator := getHttpClient
-	respParsers := getResponseParsers()
-	itemProcessors := getItemProcessors()
-	startUrl := "http://www.sougou.com"
-	firstHttpReq, err := http.NewRequest("GET", startUrl, nil)
-	if err != nil {
-		logger.Errorln(err)
-		return
-	}
-
-	//开启调度器
-	scheduler.Start(
-		channelArgs,
-		poolBaseArgs,
-		crawlDepth,
-		httpClientGenerator,
-		respParsers,
-		itemProcessors,
-		firstHttpReq)
-
-}
-
-func getHttpClient() *http.Client {
-	return &http.Client{}
-}
-
-//获得响应解析函数的序列
-func getResponseParsers() []analyzer.ParseResponse {
-	parsers := []analyzer.ParseResponse{
-		parseForATag,
-	}
-	return parsers
-}
 
 //条目处理器
 func processItem(item base.Item) (result base.Item, err error) {
@@ -77,24 +35,16 @@ func processItem(item base.Item) (result base.Item, err error) {
 	return result, nil
 }
 
-// 获得条目处理器的序列
-func getItemProcessors() []pipeline.ProcessItem {
-	itemProcessors := []pipeline.ProcessItem {
-		processItem,
-	}
-	return itemProcessors
-}
-
 //响应解析函数。只解析"A"标签
 func parseForATag(httpResp *http.Response, respDepth uint32) ([]base.Data, []error) {
 	// TODO 支持更多的HTTP响应
 	if httpResp.StatusCode != 200 {
 		err := errors.New(
 			fmt.Sprintf("Unsupported status code %d.(httpResponse=%v)", httpResp))
-			return nil, []error{err}
+		return nil, []error{err}
 	}
 
-	var reqUrl *url.URL = http.Request.URL
+	var reqUrl *url.URL = httpResp.Request.URL
 	var httpRespBody io.ReadCloser = httpResp.Body
 	defer func() {
 		if httpRespBody != nil {
@@ -148,4 +98,83 @@ func parseForATag(httpResp *http.Response, respDepth uint32) ([]base.Data, []err
 		}
 	})
 	return dataList, errs
+}
+
+//获得响应解析函数的序列
+func getResponseParsers() []analyzer.ParseResponse {
+	parsers := []analyzer.ParseResponse{
+		parseForATag,
+	}
+	return parsers
+}
+
+// 获得条目处理器的序列
+func getItemProcessors() []pipeline.ProcessItem {
+	itemProcessors := []pipeline.ProcessItem{
+		processItem,
+	}
+	return itemProcessors
+}
+
+func getHttpClient() *http.Client {
+	return &http.Client{}
+}
+
+func record(level byte, content string) {
+	if content == "" {
+		return
+	}
+	switch level {
+	case 0:
+		logger.Infoln(content)
+	case 1:
+		logger.Warnln(content)
+	case 2:
+		logger.Errorln(content)
+	}
+}
+
+func main() {
+	//创建调度器
+	scheduler := sched.NewScheduler()
+
+	//准备监控参数
+	/*intervalNs := 10 * time.Millisecond
+	maxIdleCount := uint(1000)
+
+	//开始监控
+	checkCountChan := tool.Monitoring(
+		scheduler,
+		intervalNs,
+		maxIdleCount,
+		true,
+		false,
+		record)*/
+
+	//准备启动参数
+	channelArgs := base.NewChannelArgs(10, 10, 10, 10)
+	poolBaseArgs := base.NewPoolBaseArgs(3, 3)
+	crawlDepth := uint32(1)
+	httpClientGenerator := getHttpClient
+	respParsers := getResponseParsers()
+	itemProcessors := getItemProcessors()
+	startUrl := "http://www.sougou.com"
+	firstHttpReq, err := http.NewRequest("GET", startUrl, nil)
+	if err != nil {
+		logger.Errorln(err)
+		return
+	}
+
+	//开启调度器
+	scheduler.Start(
+		channelArgs,
+		poolBaseArgs,
+		crawlDepth,
+		httpClientGenerator,
+		respParsers,
+		itemProcessors,
+		firstHttpReq)
+
+	//等待监控结束
+	//<-checkCountChan
 }

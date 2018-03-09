@@ -8,27 +8,27 @@ import (
 
 //调度器摘要信息的接口类型。
 type SchedSummary interface {
-	String() string					// 获得摘要信息的一般表示。
-	Detail() string					// 获取摘要信息的详细表示。
-	Same(other SchedSummary) bool	// 判断是否与另一份摘要信息相同。
+	String() string               // 获得摘要信息的一般表示。
+	Detail() string               // 获取摘要信息的详细表示。
+	Same(other SchedSummary) bool // 判断是否与另一份摘要信息相同。
 }
 
 type mySchedSummary struct {
-	prefix 				string //前缀
-	running 			uint32 //运行标记
-	channelArgs 		base.ChannelArgs 	//池大小
-	poolBaseArgs 		base.PoolBaseArgs   //通道总长度(或称容量)
-	crawlDepth 			uint32 //爬取的最大深度
-	chanmanSummary 		string //通道管理器的摘要信息
-	reqCacheSummary 	string //请求缓存的摘要信息
-	itemPipelineSummary string //条目处理管道的摘要信息
-	stopSignSummary 	string //停止信号的摘要信息
-	dlPoolLen 			uint32 //网页下载器池的长度
-	dlPoolCap 			uint32 //网页下载器池的容量
-	analyzerPoolLen 	uint32 //分析器池的长度
-	analyzerPoolCap 	uint32 //分析启齿的容量
-	urlCount 			int    //已请求的url的计数
-	urlDetail 			string //已请求的url的详细信息
+	prefix              string            //前缀
+	running             uint32            //运行标记
+	channelArgs         base.ChannelArgs  //池大小
+	poolBaseArgs        base.PoolBaseArgs //通道总长度(或称容量)
+	crawlDepth          uint32            //爬取的最大深度
+	chanmanSummary      string            //通道管理器的摘要信息
+	reqCacheSummary     string            //请求缓存的摘要信息
+	itemPipelineSummary string            //条目处理管道的摘要信息
+	stopSignSummary     string            //停止信号的摘要信息
+	dlPoolLen           uint32            //网页下载器池的长度
+	dlPoolCap           uint32            //网页下载器池的容量
+	analyzerPoolLen     uint32            //分析器池的长度
+	analyzerPoolCap     uint32            //分析启齿的容量
+	urlCount            int               //已请求的url的计数
+	urlDetail           string            //已请求的url的详细信息
 }
 
 //创建调度器摘要信息
@@ -50,24 +50,23 @@ func NewSchedSummary(sched *myScheduler, prefix string) SchedSummary {
 	}
 
 	return &mySchedSummary{
-		prefix: 			prefix,
-		running: 			sched.running,
-		channelArgs: 		sched.channelArgs,
-		poolBaseArgs: 		sched.poolBaseArgs,
-		crawlDepth: 		sched.crawlDepth,
-		chanmanSummary: 	sched.chanman.Summary(),
-		reqCacheSummary:	sched.reqCache.summary(),
-		dlPoolLen: 			sched.dlpool.Used(),
-		dlPoolCap: 			sched.dlpool.Total(),
-		analyzerPoolLen:	sched.analyzerPool.Used(),
-		analyzerPoolCap:	sched.analyzerPool.Total(),
-		itemPipelineSummary:sched.itemPipeline.Summary(),
-		urlCount: 	 		urlCount,
-		urlDetail: 			urlDetail,
-		stopSignSummary:	sched.stopSign.Summary(),
+		prefix:              prefix,
+		running:             sched.running,
+		channelArgs:         sched.channelArgs,
+		poolBaseArgs:        sched.poolBaseArgs,
+		crawlDepth:          sched.crawlDepth,
+		chanmanSummary:      sched.chanman.Summary(),
+		reqCacheSummary:     sched.reqCache.summary(),
+		dlPoolLen:           sched.dlpool.Used(),
+		dlPoolCap:           sched.dlpool.Total(),
+		analyzerPoolLen:     sched.analyzerPool.Used(),
+		analyzerPoolCap:     sched.analyzerPool.Total(),
+		itemPipelineSummary: sched.itemPipeline.Summary(),
+		urlCount:            urlCount,
+		urlDetail:           urlDetail,
+		stopSignSummary:     sched.stopSign.Summary(),
 	}
 }
-
 
 // 获取摘要信息。
 func (ss *mySchedSummary) getSummary(detail bool) string {

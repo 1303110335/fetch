@@ -7,6 +7,12 @@ import (
 	"sync"
 )
 
+
+//实体的接口类型
+type Entity interface {
+	Id() uint32 //ID的获取方法
+}
+
 //实体池的接口类型
 type Pool interface {
 	Take() (Entity, error)      //取出实体
@@ -15,29 +21,16 @@ type Pool interface {
 	Used() uint32               //实体池中已被使用的实体的数量
 }
 
-//实体的接口类型
-type Entity interface {
-	Id() uint32 //ID的获取方法
-}
-
-//实体池的实现类型
-type myPool struct {
-	total     	uint32        	//池的总容量
-	etype     	reflect.Type  	//池中实体的类型
-	genEntity 	func() Entity 	//池中实体的生成函数
-	container 	chan Entity   	//实体容器
-	idContainer map[uint32]bool //实体ID的容器
-	mutex 		sync.Mutex 		//针对实体ID容器操作的互斥锁
-}
-
-
-
 //创建实体池
 func NewPool(
 	total uint32,
 	entityType reflect.Type,
 	genEntity func() Entity) (Pool, error) {
-	//todo something...
+	if total == 0 {
+		errMsg :=
+			fmt.Sprintf("The pool can not be initialized! (total=%d)\n", total)
+		return nil, errors.New(errMsg)
+	}
 	size := int(total)
 	container := make(chan Entity, size)
 	idContainer := make(map[uint32]bool)	//实体ID的容器
@@ -61,6 +54,19 @@ func NewPool(
 	}
 	return pool, nil
 }
+
+
+//实体池的实现类型
+type myPool struct {
+	total     	uint32        	//池的总容量
+	etype     	reflect.Type  	//池中实体的类型
+	genEntity 	func() Entity 	//池中实体的生成函数
+	container 	chan Entity   	//实体容器
+	idContainer map[uint32]bool //实体ID的容器
+	mutex 		sync.Mutex 		//针对实体ID容器操作的互斥锁
+}
+
+
 
 
 func (pool *myPool) Take() (Entity, error) {
@@ -93,7 +99,7 @@ func (pool *myPool) Return(entity Entity) error {
 		errMsg := fmt.Sprintf("The entity (id=%d) is already in the pool!\n", entityId)
 		return errors.New(errMsg)
 	} else {
-		errMsg := fmt.Sprintf("The entity (id=%d) is illegal!\n", entity.Id())
+		errMsg := fmt.Sprintf("The entity (id=%d) is illegal!\n", entityId)
 		return errors.New(errMsg)
 	}
 }

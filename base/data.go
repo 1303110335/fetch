@@ -2,6 +2,11 @@ package base
 
 import "net/http"
 
+//数据的接口
+type Data interface {
+	Valid() bool //数据是否有效
+}
+
 //请求
 type Request struct {
 	httpReq *http.Request	//http请求的指针值
@@ -23,6 +28,10 @@ func (req *Request) Depth() uint32 {
 	return req.depth
 }
 
+//数据是否有效
+func (req *Request) Valid() bool {
+	return req.httpReq != nil && req.httpReq.URL != nil
+}
 
 //响应
 type Response struct {
@@ -45,23 +54,15 @@ func (resp *Response) Depth() uint32 {
 	return resp.depth
 }
 
-//条目
-type Item map[string]interface{}
-
-//数据的接口
-type Data interface {
-	Valid() bool //数据是否有效
-}
-
-//数据是否有效
-func (req *Request) Valid() bool {
-	return req.httpReq != nil && req.httpReq.URL != nil
-}
 
 //数据是否有效
 func (resp *Response) Valid() bool {
 	return resp.httpResp != nil && resp.httpResp.Body != nil
 }
+
+//条目
+type Item map[string]interface{}
+
 
 //数据是否有效
 func (item Item) Valid() bool {

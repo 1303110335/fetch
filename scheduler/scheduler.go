@@ -13,12 +13,9 @@ import (
 	"time"
 	"sys/fetch/base"
 	"strings"
-	"sync"
 )
 
 var logger logging.Logger = base.NewLogger()
-
-var wg sync.WaitGroup
 
 // 组件的统一代号。
 const (
@@ -30,7 +27,15 @@ const (
 
 //调度器的接口类型
 type Scheduler interface {
-	//启动调度器
+	// 开启调度器。
+	// 调用该方法会使调度器创建和初始化各个组件。在此之后，调度器会激活爬取流程的执行。
+	// 参数channelArgs代表通道参数的容器。
+	// 参数poolBaseArgs代表池基本参数的容器。
+	// 参数crawlDepth代表了需要被爬取的网页的最大深度值。深度大于此值的网页会被忽略。
+	// 参数httpClientGenerator代表的是被用来生成HTTP客户端的函数。
+	// 参数respParsers的值应为分析器所需的被用来解析HTTP响应的函数的序列。
+	// 参数itemProcessors的值应为需要被置入条目处理管道中的条目处理器的序列。
+	// 参数firstHttpReq即代表首次请求。调度器会以此为起始点开始执行爬取流程。
 	Start(channelArgs base.ChannelArgs,    //数据传输通道的长度
 		poolBaseArgs base.PoolBaseArgs,    //设定网页下载器池和分析器池的容量
 		crawlDepth uint32,                 //需要被爬取得网页的最大深度。
@@ -56,6 +61,11 @@ type Scheduler interface {
 	Summary(prefix string) SchedSummary
 }
 
+//创建调度器
+func NewScheduler() Scheduler {
+	return &myScheduler{}
+}
+
 //被用来生成http客户端的函数类型
 type GenHttpClient func() *http.Client
 
@@ -74,10 +84,6 @@ type myScheduler struct {
 	urlMap        map[string]bool       //已请求的URL的字典
 }
 
-//创建调度器
-func NewScheduler() Scheduler {
-	return &myScheduler{}
-}
 
 func (sched *myScheduler) Start(
 	channelArgs base.ChannelArgs,
@@ -146,8 +152,9 @@ func (sched *myScheduler) Start(
 		sched.stopSign.Reset()
 	}
 
+	//创建请求缓存
+	sched.reqCache = newRequestCache()
 	sched.urlMap = make(map[string]bool)
-	wg.Add(4)
 	sched.startDownloading()
 	sched.activateAnalyzers(respParsers)
 	sched.openItemPipeline()
@@ -164,8 +171,7 @@ func (sched *myScheduler) Start(
 
 	firstReq := base.NewRequest(firstHttpReq, 0)
 	sched.reqCache.put(firstReq)
-	wg.Wait()
-	return
+	return nil
 }
 
 func (sched *myScheduler) Stop() bool {
@@ -184,7 +190,7 @@ func (sched *myScheduler) Running() bool {
 }
 
 func (sched *myScheduler) ErrorChan() <-chan error {
-	if sched.chanman.Status() != mdw.CHANNEL_MANAGER_STATUS_UNINITIALIZED {
+	if sched.chanman.Status() != mdw.CHANNEL_MANAGER_STATUS_INITIALIZED {
 		return nil
 	}
 	return sched.getErrorChan()
@@ -206,7 +212,6 @@ func (sched *myScheduler) Summary(prefix string) SchedSummary {
 
 //开始下载
 func (sched *myScheduler) startDownloading() {
-	defer wg.Done()
 	go func() {
 		for {
 			req, ok := <-sched.getReqChan()
@@ -218,9 +223,40 @@ func (sched *myScheduler) startDownloading() {
 	}()
 }
 
+func (sched *myScheduler) download(req base.Request) {
+	defer func() {
+		if p := recover(); p != nil {
+			errMsg := fmt.Sprintf("Fatal Download Error: %s\n", p)
+			logger.Fatal(errMsg)
+		}
+	}()
+
+	downloader, err := sched.dlpool.Take()
+	if err != nil {
+		errMsg := fmt.Sprintf("Downloader pool error: %s", err)
+		sched.sendError(errors.New(errMsg), SCHEDULER_CODE)
+		return
+	}
+	defer func() {
+		err := sched.dlpool.Return(downloader)
+		if err != nil {
+			errMsg := fmt.Sprintf("Downloader pool error: %s", err)
+			sched.sendError(errors.New(errMsg), SCHEDULER_CODE)
+		}
+	}()
+
+	code := generateCode(DOWNLOADER_CODE, downloader.Id())
+	respp, err := downloader.Download(req)
+	if respp != nil {
+		sched.sendResp(*respp, code)
+	}
+	if err != nil {
+		sched.sendError(err, code)
+	}
+}
+
 //激活分析器
 func (sched *myScheduler) activateAnalyzers(respParsers []anlz.ParseResponse) {
-	defer wg.Done()
 	go func() {
 		for {
 			resp, ok := <-sched.getRespChan()
@@ -232,55 +268,6 @@ func (sched *myScheduler) activateAnalyzers(respParsers []anlz.ParseResponse) {
 	}()
 }
 
-//打开条目处理管道
-func (sched *myScheduler) openItemPipeline() {
-	defer wg.Done()
-	go func() {
-		sched.itemPipeline.SetFailFast(true)
-		code := ITEMPIPELINE_CODE
-		for item := range sched.getItemChan() {
-			go func(item base.Item) {
-				defer func() {
-					if p := recover(); p != nil {
-						errMsg := fmt.Sprintf("Fatal Item Processing Error: %s\n", p)
-						logger.Fatal(errMsg)
-					}
-				}()
-				errs := sched.itemPipeline.Send(item)
-				if errs != nil {
-					for _, err := range errs {
-						sched.sendError(err, code)
-					}
-				}
-
-			}(item)
-		}
-	}()
-}
-
-//调度。适当地搬运请求缓存中的请求到请求通道
-func (sched *myScheduler) schedule(interval time.Duration) {
-	defer wg.Done()
-	go func() {
-		for {
-			remainder := cap(sched.getRespChan()) - len(sched.getRespChan())
-			var temp *base.Request
-			for remainder > 0 {
-				temp = sched.reqCache.get()
-				if temp == nil {
-					break
-				}
-				sched.getReqChan() <- *temp
-				remainder--
-			}
-			time.Sleep(interval)
-			if sched.stopSign.Signed() {
-				sched.stopSign.Deal(SCHEDULER_CODE)
-				return
-			}
-		}
-	}()
-}
 
 func (sched *myScheduler) analyze(respParsers []anlz.ParseResponse, resp base.Response) {
 	defer func() {
@@ -328,10 +315,36 @@ func (sched *myScheduler) analyze(respParsers []anlz.ParseResponse, resp base.Re
 	}
 }
 
+//打开条目处理管道
+func (sched *myScheduler) openItemPipeline() {
+	go func() {
+		sched.itemPipeline.SetFailFast(true)
+		code := ITEMPIPELINE_CODE
+		for item := range sched.getItemChan() {
+			go func(item base.Item) {
+				defer func() {
+					if p := recover(); p != nil {
+						errMsg := fmt.Sprintf("Fatal Item Processing Error: %s\n", p)
+						logger.Fatal(errMsg)
+					}
+				}()
+				errs := sched.itemPipeline.Send(item)
+				if errs != nil {
+					for _, err := range errs {
+						sched.sendError(err, code)
+					}
+				}
+
+			}(item)
+		}
+	}()
+}
+
+
 func (sched *myScheduler) saveReqToCache(req base.Request, code string) bool {
 	httpReq := req.HttpReq()
 	if httpReq == nil {
-		logger.Warn("Ignore the request! It's Http request is invalid!")
+		logger.Warnln("Ignore the request! It's Http request is invalid!")
 		return false
 	}
 	reqUrl := httpReq.URL
@@ -367,46 +380,6 @@ func (sched *myScheduler) saveReqToCache(req base.Request, code string) bool {
 	return true
 }
 
-//获取通道管理器持有的请求通道
-func (sched *myScheduler) getReqChan() chan base.Request {
-	reqChan, err := sched.chanman.ReqChan()
-	if err != nil {
-		panic(err)
-	}
-	return reqChan
-}
-
-func (sched *myScheduler) download(req base.Request) {
-	defer func() {
-		if p := recover(); p != nil {
-			errMsg := fmt.Sprintf("Fatal Download Error: %s\n", p)
-			logger.Fatal(errMsg)
-		}
-	}()
-
-	downloader, err := sched.dlpool.Take()
-	if err != nil {
-		errMsg := fmt.Sprintf("Downloader pool error: %s", err)
-		sched.sendError(errors.New(errMsg), SCHEDULER_CODE)
-		return
-	}
-	defer func() {
-		err := sched.dlpool.Return(downloader)
-		if err != nil {
-			errMsg := fmt.Sprintf("Downloader pool error: %s", err)
-			sched.sendError(errors.New(errMsg), SCHEDULER_CODE)
-		}
-	}()
-
-	code := generateCode(DOWNLOADER_CODE, downloader.Id())
-	respp, err := downloader.Download(req)
-	if respp != nil {
-		sched.sendResp(*respp, code)
-	}
-	if err != nil {
-		sched.sendError(err, code)
-	}
-}
 
 //发送响应
 func (sched *myScheduler) sendResp(resp base.Response, code string) bool {
@@ -456,13 +429,51 @@ func (sched *myScheduler) sendError(err error, code string) bool {
 	return true
 }
 
-func (sched *myScheduler) getErrorChan() chan error {
-	errChan, err := sched.chanman.ErrorChan()
+//调度。适当地搬运请求缓存中的请求到请求通道
+func (sched *myScheduler) schedule(interval time.Duration) {
+	go func() {
+		for {
+			if sched.stopSign.Signed() {
+				sched.stopSign.Deal(SCHEDULER_CODE)
+				return
+			}
+			remainder := cap(sched.getReqChan()) - len(sched.getReqChan())
+			var temp *base.Request
+			for remainder > 0 {
+				temp = sched.reqCache.get()
+				if temp == nil {
+					break
+				}
+				if sched.stopSign.Signed() {
+					sched.stopSign.Deal(SCHEDULER_CODE)
+					return
+				}
+				sched.getReqChan() <- *temp
+				remainder--
+			}
+			time.Sleep(interval)
+
+		}
+	}()
+}
+
+
+//获取通道管理器持有的请求通道
+func (sched *myScheduler) getReqChan() chan base.Request {
+	reqChan, err := sched.chanman.ReqChan()
 	if err != nil {
 		panic(err)
 	}
+	return reqChan
+}
 
-	return errChan
+
+func (sched *myScheduler) getRespChan() chan base.Response {
+	respChan, err := sched.chanman.RespChan()
+	if err != nil {
+		panic(err)
+	}
+	return respChan
 }
 
 func (sched *myScheduler) getItemChan() chan base.Item {
@@ -474,10 +485,12 @@ func (sched *myScheduler) getItemChan() chan base.Item {
 	return itemChan
 }
 
-func (sched *myScheduler) getRespChan() chan base.Response {
-	respChan, err := sched.chanman.RespChan()
+
+func (sched *myScheduler) getErrorChan() chan error {
+	errChan, err := sched.chanman.ErrorChan()
 	if err != nil {
 		panic(err)
 	}
-	return respChan
+
+	return errChan
 }

@@ -23,17 +23,17 @@ type StopSign interface {
 	Summary() string
 }
 
-type myStopSign struct {
-	signed bool 					//表示信号是否已发出
-	dealCountMap map[string]uint32 	//处理计数的字典
-	rwmutex sync.RWMutex			//读写锁
-}
-
 func NewStopSign() StopSign {
 	ss := &myStopSign{
 		dealCountMap: make(map[string]uint32),
 	}
 	return ss
+}
+
+type myStopSign struct {
+	signed bool 					//表示信号是否已发出
+	dealCountMap map[string]uint32 	//处理计数的字典
+	rwmutex sync.RWMutex			//读写锁
 }
 
 func (ss *myStopSign) Sign() bool {

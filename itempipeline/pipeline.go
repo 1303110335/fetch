@@ -26,19 +26,6 @@ type ItemPipeline interface {
 	Summary() string
 }
 
-//被用来处理条目的函数类型
-type ProcessItem func(item base.Item) (result base.Item, err error)
-
-//条目处理管道的实现类型
-type myItemPipeline struct {
-	itemProcessors 	[]ProcessItem	//条目处理器的列表
-	failFast 		bool 			//表示处理是否需要快速失败的标志位
-	sent 			uint64 			//已被发送的条目的数量
-	accepted		uint64 			//已被接收的条目的数量
-	processed 		uint64 			//已被处理的条目的数量
-	processingNumber uint64 		//正在被处理的条目的数量
-}
-
 func NewItemPipeline(itemProcessors []ProcessItem) ItemPipeline {
 	if itemProcessors == nil {
 		panic(errors.New(fmt.Sprintf("Invalid item processor list!")))
@@ -52,6 +39,18 @@ func NewItemPipeline(itemProcessors []ProcessItem) ItemPipeline {
 	}
 	return &myItemPipeline{itemProcessors: innerItemProcessors}
 }
+
+
+//条目处理管道的实现类型
+type myItemPipeline struct {
+	itemProcessors 	[]ProcessItem	//条目处理器的列表
+	failFast 		bool 			//表示处理是否需要快速失败的标志位
+	sent 			uint64 			//已被发送的条目的数量
+	accepted		uint64 			//已被接收的条目的数量
+	processed 		uint64 			//已被处理的条目的数量
+	processingNumber uint64 		//正在被处理的条目的数量
+}
+
 
 func (ip *myItemPipeline) Send (item base.Item) []error {
 	atomic.AddUint64(&ip.processingNumber, 1)

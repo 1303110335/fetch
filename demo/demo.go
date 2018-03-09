@@ -14,6 +14,7 @@ import (
 	"sys/fetch/base"
 	pipeline "sys/fetch/itempipeline"
 	sched "sys/fetch/scheduler"
+	"sys/fetch/tool"
 )
 
 var logger logging.Logger = logging.NewSimpleLogger()
@@ -116,7 +117,7 @@ func getItemProcessors() []pipeline.ProcessItem {
 	return itemProcessors
 }
 
-func getHttpClient() *http.Client {
+func genHttpClient() *http.Client {
 	return &http.Client{}
 }
 
@@ -139,7 +140,7 @@ func main() {
 	scheduler := sched.NewScheduler()
 
 	//准备监控参数
-	/*intervalNs := 10 * time.Millisecond
+	intervalNs := 10 * time.Millisecond
 	maxIdleCount := uint(1000)
 
 	//开始监控
@@ -149,16 +150,16 @@ func main() {
 		maxIdleCount,
 		true,
 		false,
-		record)*/
+		record)
 
 	//准备启动参数
 	channelArgs := base.NewChannelArgs(10, 10, 10, 10)
 	poolBaseArgs := base.NewPoolBaseArgs(3, 3)
 	crawlDepth := uint32(1)
-	httpClientGenerator := getHttpClient
+	httpClientGenerator := genHttpClient
 	respParsers := getResponseParsers()
 	itemProcessors := getItemProcessors()
-	startUrl := "http://www.sougou.com"
+	startUrl := "http://www.sogou.com"
 	firstHttpReq, err := http.NewRequest("GET", startUrl, nil)
 	if err != nil {
 		logger.Errorln(err)
@@ -176,5 +177,5 @@ func main() {
 		firstHttpReq)
 
 	//等待监控结束
-	//<-checkCountChan
+	<-checkCountChan
 }

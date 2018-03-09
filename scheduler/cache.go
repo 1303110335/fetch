@@ -6,6 +6,11 @@ import (
 	"fmt"
 )
 
+var statusMap = map[byte]string {
+	0: "running",
+	1: "closed",
+}
+
 //请求缓存的接口类型
 type requestCache interface {
 	//将请求放入请求缓存
@@ -22,17 +27,6 @@ type requestCache interface {
 	summary() string
 }
 
-type reqCacheBySlice struct {
-	cache  []*base.Request //缓存
-	mutex  sync.Mutex      //锁
-	status byte            //状态 0:表示请求缓存正在运行 1:表示请求缓存已被关闭
-}
-
-var statusMap = map[byte]string {
-	0: "running",
-	1: "closed",
-}
-
 //创建请求缓存
 func newRequestCache() requestCache {
 	rc := &reqCacheBySlice{
@@ -40,6 +34,13 @@ func newRequestCache() requestCache {
 	}
 	return rc
 }
+
+type reqCacheBySlice struct {
+	cache  []*base.Request //缓存
+	mutex  sync.Mutex      //锁
+	status byte            //状态 0:表示请求缓存正在运行 1:表示请求缓存已被关闭
+}
+
 
 func (rcache *reqCacheBySlice) put(req *base.Request) bool {
 	if req == nil {
@@ -51,7 +52,6 @@ func (rcache *reqCacheBySlice) put(req *base.Request) bool {
 	rcache.mutex.Lock()
 	defer rcache.mutex.Unlock()
 	rcache.cache = append(rcache.cache, req)
-	fmt.Println(rcache.cache)
 	return true
 }
 
